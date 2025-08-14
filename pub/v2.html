@@ -1,0 +1,559 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Flag Rush</title>
+  <style>
+    :root{
+      --bg:#0b0d10; /* near-black */
+      --panel:#12161b;
+      --muted:#a9b3c0;
+      --text:#e6edf3;
+      --accent:#5ac8fa;
+      --accent-2:#7ee787;
+      --danger:#ff6b6b;
+      --shadow:0 10px 30px rgba(0,0,0,.45);
+      --radius:16px;
+      --gap:14px;
+      --blur:16px; /* JS drives this */
+    }
+    html,body{height:100%}
+    body{margin:0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, "Helvetica Neue", Arial, "Noto Sans", "Apple Color Emoji", "Segoe UI Emoji"; background: radial-gradient(1200px 800px at 20% 10%, #121620 0%, #0b0d10 60%); color:var(--text);}
+    .container{max-width:820px; margin:0 auto; padding:24px;}
+    header.title{display:flex; align-items:center; justify-content:space-between; gap:1rem;}
+    .brand{font-weight:800; letter-spacing:.5px; font-size:clamp(26px, 4vw, 40px)}
+    .card{background:var(--panel); border:1px solid rgba(255,255,255,.06); box-shadow:var(--shadow); border-radius:var(--radius);}
+    .stack{display:flex; flex-direction:column; gap:var(--gap)}
+    button{appearance:none; border:none; border-radius:12px; background:#1a222c; color:var(--text); padding:14px 16px; font-weight:650; cursor:pointer; transition:transform .04s ease, background .2s ease, outline-color .2s; outline:2px solid transparent}
+    button:hover{background:#1f2a36}
+    button:active{transform:translateY(1px)}
+    .btn-primary{background:linear-gradient(180deg, #1f3347, #112233); color:#eaf6ff; border:1px solid rgba(90,200,250,.35)}
+    .btn-primary:hover{background:linear-gradient(180deg, #25405a, #172b3f)}
+
+    /* Screens */
+    .screen{display:none}
+    .screen.active{display:block}
+
+    /* Title Screen */
+    .lead{color:var(--muted)}
+    .title-actions{display:flex; gap:12px; flex-wrap:wrap}
+
+    /* Leaderboard */
+    table{width:100%; border-collapse:separate; border-spacing:0}
+    thead th{font-size:.9rem; color:#b7c1cf; font-weight:700; text-align:left; padding:12px}
+    tbody td{padding:12px; border-top:1px solid rgba(255,255,255,.06)}
+    tbody tr:nth-child(odd){background:rgba(255,255,255,.02)}
+    .mono{font-variant-numeric: tabular-nums; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace}
+
+    /* Game HUD */
+    .hud{display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px; margin-bottom:14px}
+    .hud .chip{background:#0f141a; border:1px solid rgba(255,255,255,.06); border-radius:12px; padding:10px 12px; display:flex; justify-content:center; align-items:center; gap:6px}
+    .hud .label{color:#9fb0c2; font-size:.9rem}
+
+    /* Flag area */
+    .flag-wrap{position:relative; overflow:hidden; border-radius:16px; background:#0c1218; border:1px solid rgba(255,255,255,.06)}
+    .flag{display:block; width:100%; height: clamp(200px, 40vh, 360px); object-fit:contain; filter: blur(var(--blur));}
+    .countdown{position:absolute; right:12px; top:12px; width:96px; height:6px; background:rgba(255,255,255,.12); border-radius:999px; overflow:hidden}
+    .countdown .bar{height:100%; width:100%; background:linear-gradient(90deg, var(--accent), #47b0f4); transform-origin:left center}
+
+    /* Options */
+    .options{display:grid; grid-template-columns:1fr; gap:10px; margin-top:12px}
+    @media (min-width:640px){ .options{grid-template-columns:1fr 1fr} }
+    .opt{position:relative; text-align:left}
+    .opt.correct{box-shadow:0 0 0 2px var(--accent-2) inset}
+    .opt.wrong{box-shadow:0 0 0 2px var(--danger) inset}
+
+    /* Results */
+    .results-grid{display:grid; gap:14px}
+    .metrics{display:grid; grid-template-columns:repeat(3,1fr); gap:10px}
+    .metric{background:#0f141a; border:1px solid rgba(255,255,255,.06); border-radius:12px; padding:14px; text-align:center}
+
+    /* Breakdown table */
+    .thumb{width:40px; height:28px; border-radius:4px; object-fit:cover; border:1px solid rgba(255,255,255,.12)}
+    .green{color:var(--accent-2)}
+    .red{color:var(--danger)}
+
+    /* Utility */
+    .mt-2{margin-top:8px}
+    .mt-3{margin-top:12px}
+    .mt-4{margin-top:18px}
+    .mt-6{margin-top:28px}
+    .hidden{display:none !important}
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header class="title">
+      <div class="brand">Flag Rush</div>
+      <div class="title-actions">
+        <button id="btn-theme" title="Toggle theme" class="hidden">🌓</button>
+        <button id="btn-options">Options</button>
+      </div>
+    </header>
+
+    <!-- Title Screen -->
+    <section id="screen-title" class="screen active">
+      <div class="stack">
+        <div class="card" style="padding:18px;">
+          <p class="lead">Guess the flag as fast as you can. The flag unblurs over 5s; you have 10s to answer. Wrong = elapsed + 10s penalty. 20 flags. Fastest total time wins.</p>
+          <div class="mt-3"><button id="btn-start" class="btn-primary">Start Game</button></div>
+        </div>
+
+        <div class="card" style="padding:18px;">
+          <h3 style="margin:0 0 10px 0;">Top 5 Attempts</h3>
+          <div class="lead" id="lb-empty" style="display:none">No attempts yet. Be the first.</div>
+          <div class="lb-wrap">
+            <table id="leaderboard">
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>Date</th>
+                  <th>Total</th>
+                  <th>Pen</th>
+                  <th>Correct</th>
+                  <th>Avg</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Options Screen -->
+    <section id="screen-options" class="screen">
+      <div class="stack">
+        <div class="card" style="padding:18px;">
+          <h2 style="margin-top:0">Options</h2>
+          <label class="mt-3"><input type="checkbox" id="opt-blur"> Enable blur animation</label>
+          <div class="mt-4"><button id="btn-back">Back</button></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Game Screen -->
+    <section id="screen-game" class="screen">
+      <div class="hud">
+        <div class="chip"><span class="label">Elapsed</span> <span id="hud-elapsed" class="mono">0.00s</span></div>
+        <div class="chip"><span class="label">Penalties</span> <span id="hud-penalties" class="mono">0.00s</span></div>
+        <div class="chip"><span class="label">Total</span> <span id="hud-total" class="mono">0.00s</span></div>
+      </div>
+
+      <div class="flag-wrap card">
+        <img id="flag-img" class="flag" alt="Flag" />
+        <div class="countdown"><div class="bar" id="cd-bar"></div></div>
+      </div>
+
+      <div class="options">
+        <button class="opt" data-i="0"></button>
+        <button class="opt" data-i="1"></button>
+        <button class="opt" data-i="2"></button>
+        <button class="opt" data-i="3"></button>
+      </div>
+    </section>
+
+    <!-- Results Screen -->
+    <section id="screen-results" class="screen">
+      <div class="results-grid">
+        <div class="card" style="padding:18px;">
+          <h2 style="margin-top:0">Results</h2>
+          <div class="metrics mt-3">
+            <div class="metric"><div class="label">Elapsed</div><div id="res-elapsed" class="mono" style="font-size:1.2rem">0.00s</div></div>
+            <div class="metric"><div class="label">Penalties</div><div id="res-pen" class="mono" style="font-size:1.2rem">0.00s</div></div>
+            <div class="metric"><div class="label">Total</div><div id="res-total" class="mono" style="font-size:1.2rem">0.00s</div></div>
+          </div>
+          <div class="mt-3"><span id="res-correct" class="mono"></span></div>
+          <div class="mt-4"><button id="btn-again" class="btn-primary">Play Again</button> <button id="btn-home">Home</button></div>
+        </div>
+
+        <div class="card" style="padding:18px;">
+          <h3 style="margin:0 0 10px 0">Per-flag breakdown</h3>
+          <div style="max-height:340px; overflow:auto">
+            <table id="breakdown">
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>Flag</th>
+                  <th>Correct</th>
+                  <th>Your pick</th>
+                  <th>Elap</th>
+                  <th>Pen</th>
+                  <th>Total</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="card" style="padding:18px;">
+          <h3 style="margin:0 0 10px 0">Leaderboard</h3>
+          <table id="leaderboard2">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Date</th>
+                <th>Total</th>
+                <th>Pen</th>
+                <th>Correct</th>
+                <th>Avg</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <script type="module">
+    // ===== Constants =====
+    const GAME_LEN = 20;
+    const REVEAL_MS = 5000;
+    const MAX_PER_FLAG_MS = 10000;
+    const FEEDBACK_MS = 300;
+    const PENALTY_MS = 10000;
+    const LEADERBOARD_SIZE = 5;
+
+    // ===== Utilities =====
+    const fmt = ms => (ms/1000).toFixed(2) + 's';
+    const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+    function shuffle(a){ for(let i=a.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]];} return a }
+    const uuid = () => crypto.getRandomValues(new Uint32Array(4)).join('-');
+
+    // ===== Full flag set (ISO-style codes incl. territories) =====
+    const displayNames = (typeof Intl !== 'undefined' && Intl.DisplayNames)
+      ? new Intl.DisplayNames(['en'], { type: 'region' })
+      : null;
+    const NAME_OVERRIDES = { XK: 'Kosovo' };
+    const REGION_CODES = [
+      'ad','ae','af','ag','ai','al','am','ao','aq','ar','as','at','au','aw','ax','az','ba','bb','bd','be','bf','bg','bh','bi','bj','bl','bm','bn','bo','bq','br','bs','bt','bv','bw','by','bz','ca','cc','cd','cf','cg','ch','ci','ck','cl','cm','cn','co','cr','cu','cv','cw','cx','cy','cz','de','dj','dk','dm','do','dz','ec','ee','eg','eh','er','es','et','fi','fj','fk','fm','fo','fr','ga','gb','gd','ge','gf','gg','gh','gi','gl','gm','gn','gp','gq','gr','gs','gt','gu','gw','gy','hk','hm','hn','hr','ht','hu','id','ie','il','im','in','io','iq','ir','is','it','je','jm','jo','jp','ke','kg','kh','ki','km','kn','kp','kr','kw','ky','kz','la','lb','lc','li','lk','lr','ls','lt','lu','lv','ly','ma','mc','md','me','mf','mg','mh','mk','ml','mm','mn','mo','mp','mq','mr','ms','mt','mu','mv','mw','mx','my','mz','na','nc','ne','nf','ng','ni','nl','no','np','nr','nu','nz','om','pa','pe','pf','pg','ph','pk','pl','pm','pn','pr','ps','pt','pw','py','qa','re','ro','rs','ru','rw','sa','sb','sc','sd','se','sg','sh','si','sj','sk','sl','sm','sn','so','sr','ss','st','sv','sx','sy','sz','tc','td','tf','tg','th','tj','tk','tl','tm','tn','to','tr','tt','tv','tw','tz','ua','ug','um','us','uy','uz','va','vc','ve','vg','vi','vn','vu','wf','ws','ye','yt','za','zm','zw','xk'
+    ];
+    const FLAGS = REGION_CODES.map(code => ({
+      code,
+      name: NAME_OVERRIDES[code.toUpperCase()] || (displayNames ? displayNames.of(code.toUpperCase()) : code.toUpperCase()) || code.toUpperCase()
+    }));
+    const flagUrl = code => `https://flagcdn.com/${code}.svg`;
+
+    // ===== Storage (leaderboard) =====
+    const KEY = 'flagRush.leaderboard.v1';
+    function getLB(){ try{ return JSON.parse(localStorage.getItem(KEY))||[] }catch{ return [] } }
+    function saveLB(rows){ localStorage.setItem(KEY, JSON.stringify(rows)) }
+    function insertLB(row){
+      const rows = getLB();
+      rows.push(row);
+      rows.sort((a,b)=>{
+        if (a.combinedMs !== b.combinedMs) return a.combinedMs - b.combinedMs;
+        if (a.totalPenaltyMs !== b.totalPenaltyMs) return a.totalPenaltyMs - b.totalPenaltyMs;
+        if (a.lastFlagMs !== b.lastFlagMs) return a.lastFlagMs - b.lastFlagMs;
+        return a.timestamp - b.timestamp;
+      });
+      const trimmed = rows.slice(0, LEADERBOARD_SIZE);
+      saveLB(trimmed);
+      return trimmed;
+    }
+    
+    // ===== Settings =====
+    const SETTINGS_KEY = 'flagRush.settings';
+    const defaultSettings = { blurEnabled: true };
+    function loadSettings(){
+      try { return { ...defaultSettings, ...JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}') }; }
+      catch { return { ...defaultSettings }; }
+    }
+    function saveSettings(){ localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); }
+    let settings = loadSettings();
+
+    // ===== Screen helpers =====
+    const qs = s => document.querySelector(s);
+    const qsa = s => Array.from(document.querySelectorAll(s));
+    const screens = {
+      title: qs('#screen-title'),
+      options: qs('#screen-options'),
+      game: qs('#screen-game'),
+      results: qs('#screen-results')
+    };
+    function goto(name){ Object.values(screens).forEach(el=>el.classList.remove('active')); screens[name].classList.add('active'); }
+
+    // ===== Leaderboard rendering =====
+    function renderLB(sel){
+      const table = typeof sel === 'string' ? qs(sel) : sel;
+      if (!table) return;
+      const tbody = table.querySelector('tbody');
+      const rows = getLB();
+      tbody.innerHTML = '';
+      const empty = qs('#lb-empty');
+      if (!rows.length){ if (empty) empty.style.display='block'; return }
+      if (empty) empty.style.display='none';
+      rows.forEach((r,i)=>{
+        const tr = document.createElement('tr');
+        const date = new Date(r.timestamp);
+        tr.innerHTML = `
+          <td>${i+1}</td>
+          <td class="mono">${date.toLocaleString()}</td>
+          <td class="mono">${fmt(r.combinedMs)}</td>
+          <td class="mono">${fmt(r.totalPenaltyMs)}</td>
+          <td class="mono">${r.correctCount}/${GAME_LEN}</td>
+          <td class="mono">${fmt(r.avgMsPerFlag)}</td>`;
+        tbody.appendChild(tr);
+      });
+    }
+
+    // ===== Game state =====
+    let state = null; // will hold run state
+
+    function initState(){
+      return {
+        runId: uuid(),
+        startedAt: performance.now(),
+        idx: 0,
+        // unique, no repeats
+        sequence: shuffle([...FLAGS]).slice(0, GAME_LEN),
+        totals: { elapsedMs:0, penaltyMs:0, combinedMs:0, correctCount:0, avgMsPerFlag:0 },
+        current: null,
+        summary: []
+      };
+    }
+
+    function buildOptions(correct){
+      const pool = FLAGS.filter(f => f.code !== correct.code);
+      shuffle(pool);
+      // ensure unique options and include correct
+      const options = shuffle([correct, ...pool.slice(0,3)]);
+      const correctIndex = options.findIndex(o => o.code === correct.code);
+      return { options, correctIndex };
+    }
+
+    // ===== UI bindings =====
+    let hudElapsed, hudPen, hudTotal, flagImg, cdBar, optBtns;
+
+    function bindUI(){
+      hudElapsed = qs('#hud-elapsed');
+      hudPen = qs('#hud-penalties');
+      hudTotal = qs('#hud-total');
+      flagImg = qs('#flag-img');
+      cdBar = qs('#cd-bar');
+      optBtns = qsa('.opt');
+      optBtns.forEach(btn=> btn.addEventListener('click', ev => {
+        if (!state?.current || state.current.locked) return;
+        const i = Number(ev.currentTarget.dataset.i);
+        answer(i);
+      }));
+    }
+
+    function updateHud(elapsedMs){
+      hudElapsed.textContent = fmt(state.totals.elapsedMs + elapsedMs);
+      hudPen.textContent = fmt(state.totals.penaltyMs);
+      hudTotal.textContent = fmt(state.totals.elapsedMs + state.totals.penaltyMs + elapsedMs);
+    }
+
+    function renderQuestion(){
+      const correct = state.sequence[state.idx];
+      const { options, correctIndex } = buildOptions(correct);
+      state.current = {
+        flag: correct,
+        options,
+        correctIndex,
+        startMs: performance.now(),
+        answeredAtMs: null,
+        locked:false
+      };
+      // Reset UI
+      document.documentElement.style.setProperty('--blur', settings.blurEnabled ? '16px' : '0px');
+      flagImg.src = flagUrl(correct.code);
+      flagImg.alt = `Flag of ${correct.name}`;
+      flagImg.onerror = () => { // fallback to PNG if SVG not available
+        flagImg.onerror = null;
+        flagImg.src = `https://flagcdn.com/w320/${correct.code}.png`;
+      };
+      optBtns.forEach((b,i)=>{ b.textContent = options[i].name; b.classList.remove('correct','wrong'); });
+      // Start frame loop
+      requestAnimationFrame(loop);
+    }
+
+    function loop(ts){
+      if (!state?.current || state.current.locked) return;
+      const elapsed = clamp(ts - state.current.startMs, 0, MAX_PER_FLAG_MS);
+      // Blur progress
+      if (settings.blurEnabled) {
+        const reveal = clamp((ts - state.current.startMs) / REVEAL_MS, 0, 1);
+        const blurPx = (1 - reveal) * 16; // 16px -> 0
+        document.documentElement.style.setProperty('--blur', blurPx.toFixed(2) + 'px');
+      }
+      // Countdown bar (shrinks over 10s)
+      const remainPct = 1 - (elapsed / MAX_PER_FLAG_MS);
+      cdBar.style.transform = `scaleX(${clamp(remainPct, 0, 1)})`;
+      // HUD
+      updateHud(elapsed);
+      // Timeout
+      if (elapsed >= MAX_PER_FLAG_MS){
+        complete(false, MAX_PER_FLAG_MS, PENALTY_MS, 'timeout', null);
+        return;
+      }
+      requestAnimationFrame(loop);
+    }
+
+    function answer(i){
+      const now = performance.now();
+      const elapsed = clamp(now - state.current.startMs, 0, MAX_PER_FLAG_MS);
+      const correct = (i === state.current.correctIndex);
+      const penalty = correct ? 0 : PENALTY_MS;
+      complete(correct, elapsed, penalty, 'answer', i);
+    }
+
+    function flash(btn, cls){
+      btn.classList.add(cls);
+      setTimeout(()=>btn.classList.remove(cls), FEEDBACK_MS);
+    }
+
+    function complete(isCorrect, elapsedMs, penaltyMs, reason, pickedIndex){
+      if (!state?.current || state.current.locked) return;
+      state.current.locked = true;
+      // Feedback 300ms
+      if (pickedIndex != null){
+        flash(optBtns[pickedIndex], isCorrect ? 'correct' : 'wrong');
+        if (!isCorrect){
+          // also flash the correct one briefly for clarity
+          setTimeout(()=> flash(optBtns[state.current.correctIndex], 'correct'), 0);
+        }
+      } else {
+        // timeout: flash correct
+        flash(optBtns[state.current.correctIndex], 'correct');
+      }
+
+      // Update totals & summary
+      state.totals.elapsedMs += elapsedMs;
+      state.totals.penaltyMs += penaltyMs;
+      state.totals.combinedMs = state.totals.elapsedMs + state.totals.penaltyMs;
+      if (isCorrect) state.totals.correctCount++;
+
+      state.summary.push({
+        idx: state.idx,
+        flag: state.current.flag,
+        correct: isCorrect,
+        picked: pickedIndex != null ? state.current.options[pickedIndex] : null,
+        elapsedMs, penaltyMs,
+        totalMs: elapsedMs + penaltyMs,
+        reason
+      });
+
+      setTimeout(()=>{
+        state.idx++;
+        if (state.idx >= GAME_LEN){ finishRun(); } else { renderQuestion(); }
+      }, FEEDBACK_MS);
+    }
+
+    function finishRun(){
+      // Build score row
+      const lastFlag = state.summary[state.summary.length-1] ?? { elapsedMs: 0 };
+      const avg = state.totals.combinedMs / GAME_LEN;
+      const row = {
+        runId: state.runId,
+        timestamp: Date.now(),
+        totalElapsedMs: state.totals.elapsedMs,
+        totalPenaltyMs: state.totals.penaltyMs,
+        combinedMs: state.totals.combinedMs,
+        correctCount: state.totals.correctCount,
+        avgMsPerFlag: avg,
+        lastFlagMs: lastFlag.elapsedMs
+      };
+      insertLB(row);
+      // Render results
+      qs('#res-elapsed').textContent = fmt(state.totals.elapsedMs);
+      qs('#res-pen').textContent = fmt(state.totals.penaltyMs);
+      qs('#res-total').textContent = fmt(state.totals.combinedMs);
+      qs('#res-correct').textContent = `Correct: ${state.totals.correctCount} / ${GAME_LEN}`;
+      // Breakdown table
+      const tbody = qs('#breakdown tbody');
+      tbody.innerHTML = '';
+      state.summary.forEach((r, i)=>{
+        const tr = document.createElement('tr');
+        const yourPickName = r.picked ? r.picked.name : '—';
+        tr.innerHTML = `
+          <td>${i+1}</td>
+          <td><img class="thumb" src="${flagUrl(r.flag.code)}" alt="${r.flag.name}"></td>
+          <td>${r.flag.name}</td>
+          <td class="${r.correct? 'green':'red'}">${yourPickName}</td>
+          <td class="mono">${fmt(r.elapsedMs)}</td>
+          <td class="mono">${fmt(r.penaltyMs)}</td>
+          <td class="mono">${fmt(r.totalMs)}</td>`;
+        tbody.appendChild(tr);
+      });
+      // Leaderboards
+      renderLB('#leaderboard');
+      renderLB('#leaderboard2');
+      goto('results');
+    }
+
+    // ===== Buttons (bind only after DOM is ready) =====
+    function bindButtons(){
+      const startBtn = qs('#btn-start');
+      const againBtn = qs('#btn-again');
+      const homeBtn = qs('#btn-home');
+      const optBtn = qs('#btn-options');
+      const backBtn = qs('#btn-back');
+      if (!startBtn || !againBtn || !homeBtn){
+        console.warn('Some buttons were not found. Double-check IDs #btn-start, #btn-again, #btn-home.');
+      }
+      startBtn?.addEventListener('click', ()=>{ state = initState(); goto('game'); renderQuestion(); });
+      againBtn?.addEventListener('click', ()=>{ state = initState(); goto('game'); renderQuestion(); });
+      homeBtn?.addEventListener('click', ()=>{ goto('title'); renderLB('#leaderboard'); });
+      optBtn?.addEventListener('click', ()=>{ goto('options'); });
+      backBtn?.addEventListener('click', ()=>{ goto('title'); });
+    }
+
+    // ===== Preload next image =====
+    const imgCache = new Image();
+    function preloadNext(){
+      if (!state?.sequence) return;
+      const next = state.sequence[state.idx+1];
+      if (next) imgCache.src = flagUrl(next.code);
+    }
+    const observer = new MutationObserver(() => preloadNext());
+
+    // ===== Self-tests (basic) =====
+    function assert(cond, msg){ if(!cond) throw new Error('Test failed: ' + msg); }
+    function runSelfTests(){
+      // Elements exist
+      assert(!!qs('#btn-start'), '#btn-start exists');
+      assert(!!qs('#btn-again'), '#btn-again exists');
+      assert(!!qs('#btn-home'), '#btn-home exists');
+      // Sequence unique
+      const tstate = initState();
+      const seen = new Set(tstate.sequence.map(f=>f.code));
+      assert(seen.size === tstate.sequence.length, 'sequence has no repeats');
+      // Options valid
+      const correct = tstate.sequence[0];
+      const { options, correctIndex } = buildOptions(correct);
+      assert(options.length === 4, 'four options');
+      assert(options.map(o=>o.code).filter((v,i,arr)=>arr.indexOf(v)===i).length===4, 'options unique');
+      assert(options[correctIndex].code === correct.code, 'includes correct');
+      console.info('%cSelf-tests passed','color:#7ee787');
+    }
+
+    // ===== Startup =====
+    document.addEventListener('DOMContentLoaded', () => {
+      bindUI();
+      bindButtons();
+      renderLB('#leaderboard');
+      const optBlur = qs('#opt-blur');
+      if (optBlur) {
+        optBlur.checked = settings.blurEnabled;
+        optBlur.addEventListener('change', () => {
+          settings.blurEnabled = optBlur.checked;
+          saveSettings();
+          document.documentElement.style.setProperty('--blur', settings.blurEnabled ? '16px' : '0px');
+        });
+      }
+      if (!settings.blurEnabled) {
+        document.documentElement.style.setProperty('--blur', '0px');
+      }
+      saveSettings();
+      // watch for screen change to preload next flag
+      observer.observe(qs('#screen-game'), { attributes:true, attributeFilter:['class'] });
+      try { runSelfTests(); } catch (e) { console.error(e); alert('Dev self-tests failed: ' + e.message); }
+    });
+  </script>
+</body>
+</html>
